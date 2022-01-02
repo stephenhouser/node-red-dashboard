@@ -90,6 +90,8 @@ app.controller('MainController', ['$mdSidenav', '$window', 'UiEvents', '$locatio
         this.allowSwipe = "false";
         this.lockMenu = "false";
         this.allowTempTheme = true;
+        var audioStack = [];
+        var audioStackNextTime = 0;
         var main = this;
         var audioContext;
         var audioSource;
@@ -847,26 +849,40 @@ app.controller('MainController', ['$mdSidenav', '$window', 'UiEvents', '$locatio
                 }
                 try {
                     audioContext = audioContext || new AudioContext();
-                    audioSource = audioContext.createBufferSource();
-                    audioSource.onended = function() {
-                        events.emit('ui-audio', 'complete');
-                    }
+                    // audioSource = audioContext.createBufferSource();
+                    // audioSource.onended = function() {
+                    //     events.emit('ui-audio', 'complete');
+                    // }
                     var buffer = new Uint8Array(msg.audio);
 
                     audioContext.decodeAudioData(
                         buffer.buffer,
                         function(buffer) {
-                            audioSource.buffer = buffer;
-                            if (msg.vol) {
-                                var volume = audioContext.createGain();
-                                volume.gain.value = msg.vol/100;
-                                volume.connect(audioContext.destination);
-                                audioSource.connect(volume);
+                            audioStack.push(buffer);
+
+                            while (audioStack.length) {
+                                audioSource = audioContext.createBufferSource();
+                                var chunkBuffer = audioStack.shift();
+                                audioSource.buffer = chunkBuffer;
+
+                                if (msg.vol) {
+                                    var volume = audioContext.createGain();
+                                    volume.gain.value = msg.vol/100;
+                                    volume.connect(audioContext.destination);
+                                    audioSource.connect(volume);
+                                }
+                                else {
+                                    audioSource.connect(audioContext.destination);
+                                }
+                            
+                                if (audioStackNextTime == 0) {
+                                    audioStackNextTime = audioContext.currentTime + 0.01;
+                                }
+
+                                audioSource.start(audioStackNextTime);
+                                audioStackNextTime += audioSource.buffer.duration;
                             }
-                            else {
-                                audioSource.connect(audioContext.destination);
-                            }
-                            audioSource.start(0);
+
                             events.emit('ui-audio', 'playing');
                         },
                         function() { events.emit('ui-audio', 'error'); }
